@@ -1,0 +1,12 @@
+# Go build output
+/app/app
+/app/dist/
+*.test
+*.out
+
+# Helm packaging
+*.tgz
+
+# Editor / OS
+.DS_Store
+*.swp

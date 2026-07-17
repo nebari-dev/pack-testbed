@@ -1,0 +1,37 @@
+name: NebariApp CRD Conformance
+
+# STUB (P2). Stands up an ephemeral sandbox `platform` cluster - which already
+# includes the nebari-operator plus Envoy Gateway, cert-manager, and Keycloak as
+# foundational apps - and asserts NebariApp reconciliation across the spec matrix
+# and negative cases (conditions, reasons, created/omitted resources).
+# See tests/conformance/README.md for the intended matrix.
+
+on:
+  workflow_dispatch:
+  # TODO: enable on pull_request once the assertions are implemented.
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up sandbox (platform)
+        id: sandbox
+        uses: nebari-dev/action-nebari-sandbox@v2
+        with:
+          profile: platform
+
+      - name: Apply NebariApp matrix and assert
+        env:
+          KUBECONFIG: ${{ steps.sandbox.outputs.kubeconfig }}
+          GATEWAY_IP: ${{ steps.sandbox.outputs.gateway-ip }}
+        run: |
+          echo "TODO: apply tests/conformance/*.yaml and assert per-case:"
+          echo "  - conditions RoutingReady/TLSReady/AuthReady/Ready + reasons"
+          echo "  - presence/absence of HTTPRoute, SecurityPolicy, Certificate, <name>-oidc-client Secret"
+          echo "  - negative cases -> NamespaceNotOptedIn / ServiceNotFound / GatewayListenerConflict / schema rejection"
+
+      - name: Tear down sandbox
+        if: always()
+        run: k3d cluster delete "${{ steps.sandbox.outputs.cluster-name }}" || true

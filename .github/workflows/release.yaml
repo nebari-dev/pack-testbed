@@ -1,0 +1,32 @@
+name: Release Chart
+
+# Caller of the shared reusable release workflow. Exercises the release path
+# (version read, image-tag pinning, package, sign/attest, GitHub Release) for the
+# fixture chart.
+#
+# Scaffold notes:
+#   - workflow_dispatch only for now. Switch to `push` on chart/Chart.yaml once
+#     the signing-enabled ref is targeted and the sync opt-out lands.
+#   - pack-release@v1 unconditionally opens a sync PR against
+#     nebari-dev/helm-repository. pack-testbed is NOT a catalog chart, so that PR
+#     must be CLOSED, not merged. Tracked by nebari-dev/.github#47 (`sync: false`);
+#     switch to that input when available.
+#   - id-token/attestations are declared for keyless signing at the signing ref.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    uses: nebari-dev/.github/.github/workflows/pack-release.yaml@v1
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    with:
+      chart-path: chart
+      chart-name: pack-testbed
+      tag-paths: |
+        image.tag
+    secrets:
+      NEBARI_HELM_REPO_TOKEN: ${{ secrets.NEBARI_HELM_REPO_TOKEN }}

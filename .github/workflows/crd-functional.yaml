@@ -1,0 +1,44 @@
+name: NebariApp CRD Functional
+
+# STUB (P3). On an ephemeral sandbox `platform` cluster, deploy this pack with an
+# auth-enabled NebariApp and drive real traffic + OIDC through the gateway to
+# assert end-to-end behavior via the echo app. Heavier trigger than conformance.
+# See tests/functional/README.md.
+
+on:
+  workflow_dispatch:
+  # TODO: add a schedule once implemented, e.g.
+  # schedule:
+  #   - cron: "0 6 * * 1"
+
+jobs:
+  functional:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up sandbox (platform)
+        id: sandbox
+        uses: nebari-dev/action-nebari-sandbox@v2
+        with:
+          profile: platform
+
+      - name: Deploy pack + auth-enabled NebariApp, then assert end-to-end
+        env:
+          KUBECONFIG: ${{ steps.sandbox.outputs.kubeconfig }}
+          GATEWAY_IP: ${{ steps.sandbox.outputs.gateway-ip }}
+          KEYCLOAK_REALM_ADMIN_PASSWORD: ${{ steps.sandbox.outputs.keycloak-realm-admin-password }}
+          KEYCLOAK_ISSUER_URL: ${{ steps.sandbox.outputs.keycloak-issuer-url }}
+          CA_CERT_PATH: ${{ steps.sandbox.outputs.ca-cert-path }}
+        run: |
+          echo "TODO: helm install this chart with nebariapp.enabled=true, auth.enabled=true,"
+          echo "      auth.forwardAccessToken=true; then via the gateway assert:"
+          echo "  - /healthz (public route) -> 200"
+          echo "  - protected route unauthenticated -> 302 to Keycloak"
+          echo "  - after a real OIDC login -> reach the app; /whoami reports forwarded bearer + groups"
+          echo "  - wrong-group user -> 403"
+          echo "  - TLS served with a valid cert"
+
+      - name: Tear down sandbox
+        if: always()
+        run: k3d cluster delete "${{ steps.sandbox.outputs.cluster-name }}" || true

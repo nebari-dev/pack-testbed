@@ -1,0 +1,35 @@
+name: Build Docker Images
+
+# Caller of the shared reusable image workflow. Builds (and, off PRs, pushes +
+# signs + attests) the fixture image via nebari-dev/.github.
+#
+# Scaffold notes:
+#   - Target the signing-enabled ref of pack-build-image once released
+#     (nebari-dev/.github PR #46); @v1 builds without signing.
+#   - Before enabling push, ensure the Quay repo
+#     quay.io/nebari/pack-testbed-app exists (the reusable workflow does not
+#     create Quay repos).
+#   - id-token/attestations are declared for keyless signing at the signing ref.
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - ".github/workflows/build-images.yaml"
+  workflow_dispatch:
+
+jobs:
+  app:
+    uses: nebari-dev/.github/.github/workflows/pack-build-image.yaml@v1
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      image: app
+      context: app
+      push: ${{ github.event_name != 'pull_request' }}
+    secrets:
+      QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
