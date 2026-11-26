@@ -2,7 +2,7 @@
 
 image:
   repository: ghcr.io/nebari-dev/pack-testbed/app
-  tag: "latest"
+  tag: "sha-9d69752"
   pullPolicy: IfNotPresent
 
 replicaCount: 1
