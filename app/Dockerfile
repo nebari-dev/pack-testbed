@@ -9,8 +9,9 @@ COPY go.mod ./
 COPY . .
 RUN CGO_ENABLED=0 GOFLAGS=-trimpath go build -ldflags="-s -w" -o /out/app .
 
-FROM gcr.io/distroless/static:nonroot
+# throwaway: older base with fixable HIGH findings
+FROM alpine:3.19.9
 COPY --from=build /out/app /app
-USER nonroot:nonroot
+USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/app"]
