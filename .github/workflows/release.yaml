@@ -18,7 +18,7 @@ on:
 
 jobs:
   release:
-    uses: nebari-dev/.github/.github/workflows/pack-release.yaml@v1
+    uses: nebari-dev/.github/.github/workflows/pack-release.yaml@feat/trivy-build-scan # feature-branch ref while testing; moves to v2 (spec Deviations)
     permissions:
       contents: write
       id-token: write

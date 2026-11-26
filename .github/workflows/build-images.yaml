@@ -20,7 +20,7 @@ on:
 
 jobs:
   app:
-    uses: nebari-dev/.github/.github/workflows/pack-build-image.yaml@v1
+    uses: nebari-dev/.github/.github/workflows/pack-build-image.yaml@feat/trivy-build-scan # feature-branch ref while testing; moves to v2 (spec Deviations)
     permissions:
       contents: read
       packages: write
@@ -30,6 +30,7 @@ jobs:
       image: app
       context: app
       push: ${{ github.event_name != 'pull_request' }}
+      scan: true
     secrets:
       QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
       QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
