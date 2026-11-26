@@ -1,0 +1,6 @@
+vulnerabilities:
+  - id: CVE-2026-40200
+    expired_at: 2026-12-20
+    purls:
+      - pkg:apk/alpine/musl@1.2.4_git20230717-r5
+      - pkg:apk/alpine/musl-utils@1.2.4_git20230717-r5
