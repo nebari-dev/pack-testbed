@@ -1,0 +1,25 @@
+name: Scan Chart Images
+
+# Caller of the shared reusable chart image scan. Renders chart/ and scans
+# every image it deploys; first-party findings fail their job, every result
+# reaches the job summary and the Security tab.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "chart/**"
+      - ".trivyignore.yaml"
+
+jobs:
+  scan:
+    # feature-branch ref while testing; moves to v2 (spec Deviations)
+    uses: nebari-dev/.github/.github/workflows/pack-scan-images.yaml@feat/pack-scan-images
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      chart-path: chart
+      values-files: chart/values.yaml
