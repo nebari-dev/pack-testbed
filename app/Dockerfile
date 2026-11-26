@@ -2,7 +2,7 @@
 # The app has no external Go dependencies and no CGO, so the final image is a
 # single static binary on a minimal, shell-less, nonroot base - a small attack
 # surface and a clean signing/SBOM subject.
-FROM golang:1.23-bookworm AS build
+FROM golang:1.26-bookworm AS build
 WORKDIR /src
 COPY go.mod ./
 # No go.sum: the app depends only on the standard library.
