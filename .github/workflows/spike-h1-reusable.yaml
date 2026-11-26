@@ -1,0 +1,15 @@
+name: Spike h1 reusable
+
+# Throwaway risk spike (spike/cve-runner). Never merged.
+
+on:
+  workflow_call:
+
+jobs:
+  baseline:
+    if: false
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - run: echo "never runs"

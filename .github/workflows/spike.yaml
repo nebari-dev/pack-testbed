@@ -1,0 +1,250 @@
+name: Spike CVE runner
+
+# Throwaway risk spike (spike/cve-runner). Never merged.
+# g1: export build reuses the first build's layers
+# g2: llm-d-cuda pull + Trivy scan disk use
+# g3: empty SARIF run closes a category's alerts
+# h2: contents: read token lists runs and downloads artifacts
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  TRIVY_VERSION: "0.76.2"
+  TRIVY_SHA256: bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf
+
+jobs:
+  g1:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Build (registry cache, no push)
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: app
+          file: app/Dockerfile
+          platforms: linux/amd64
+          push: false
+          tags: ghcr.io/nebari-dev/pack-testbed/app:spike
+          cache-from: type=registry,ref=ghcr.io/nebari-dev/pack-testbed/app:cache
+
+      - name: Export build (OCI layout directory)
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: app
+          file: app/Dockerfile
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          cache-from: type=registry,ref=ghcr.io/nebari-dev/pack-testbed/app:cache
+          outputs: type=oci,tar=false,dest=${{ runner.temp }}/scan-oci
+
+      - name: Install Trivy
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy"
+          curl -sSfL -o "$RUNNER_TEMP/trivy.tgz" "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  $RUNNER_TEMP/trivy.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tgz" -C "$RUNNER_TEMP/trivy" trivy
+          "$RUNNER_TEMP/trivy/trivy" --version
+
+      - name: Scan export
+        run: |
+          ls -la "$RUNNER_TEMP/scan-oci"
+          "$RUNNER_TEMP/trivy/trivy" image --input "$RUNNER_TEMP/scan-oci" --platform linux/amd64 \
+            --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --format table
+          echo "trivy exit: $?"
+
+  g2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - name: df before
+        run: df -h /; df -B1 --output=avail / | tail -1
+
+      - name: Install Trivy
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy"
+          curl -sSfL -o "$RUNNER_TEMP/trivy.tgz" "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  $RUNNER_TEMP/trivy.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tgz" -C "$RUNNER_TEMP/trivy" trivy
+          "$RUNNER_TEMP/trivy/trivy" --version
+
+      - name: Start free-space sampler
+        run: |
+          nohup bash -c 'while true; do echo "$(date +%T) $(df -B1 --output=avail / | tail -1)" >> "$RUNNER_TEMP/df.log"; sleep 5; done' >/dev/null 2>&1 &
+
+      - name: docker pull llm-d-cuda
+        run: docker pull ghcr.io/llm-d/llm-d-cuda:v0.7.0
+
+      - name: df after pull
+        run: df -h /; docker image ls ghcr.io/llm-d/llm-d-cuda
+
+      - name: Trivy scan
+        run: |
+          set +e
+          "$RUNNER_TEMP/trivy/trivy" image --image-src docker --timeout 45m \
+            --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --format json -o "$RUNNER_TEMP/g2.json" ghcr.io/llm-d/llm-d-cuda:v0.7.0
+          rc=$?
+          echo "trivy exit: $rc"
+          jq '[.Results[]?.Vulnerabilities[]?] | length' "$RUNNER_TEMP/g2.json" || true
+          exit $rc
+
+      - name: df after scan, minimum free during run
+        if: always()
+        run: |
+          df -h /
+          echo "samples: $(wc -l < "$RUNNER_TEMP/df.log")"
+          sort -k2 -n "$RUNNER_TEMP/df.log" | head -1 | awk '{printf "min free %s at %s (%.2f GiB)\n", $2, $1, $2/1073741824}'
+
+  g3:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Write one-finding SARIF
+        run: |
+          cat > "$RUNNER_TEMP/one.sarif" <<'EOF'
+          {
+            "version": "2.1.0",
+            "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+            "runs": [{
+              "tool": {"driver": {"name": "Trivy", "informationUri": "https://github.com/aquasecurity/trivy", "version": "0.76.2",
+                "rules": [{"id": "CVE-2099-0001", "name": "SpikeFinding",
+                  "shortDescription": {"text": "spike finding"},
+                  "fullDescription": {"text": "Hand-written finding for the empty-SARIF spike."},
+                  "help": {"text": "spike"},
+                  "properties": {"security-severity": "9.8", "tags": ["vulnerability", "security", "CRITICAL"]}}]}},
+              "results": [{
+                "ruleId": "CVE-2099-0001", "ruleIndex": 0, "level": "error",
+                "message": {"text": "Package: spikepkg\nInstalled Version: 1.0.0\nVulnerability CVE-2099-0001"},
+                "locations": [{"physicalLocation": {"artifactLocation": {"uri": "app/Dockerfile", "uriBaseId": "ROOTPATH"},
+                  "region": {"startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 1}}}]
+              }],
+              "originalUriBaseIds": {"ROOTPATH": {"uri": "file:///"}}
+            }]
+          }
+          EOF
+
+      - uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          sarif_file: ${{ runner.temp }}/one.sarif
+          category: trivy/spike/x
+
+  g3-empty:
+    needs: g3
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Alerts before empty run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?ref=${GITHUB_REF}" \
+            --jq '.[] | {number, state, rule: .rule.id, tool: .tool.name, category: .most_recent_instance.category}' || true
+
+      - name: Write empty SARIF
+        run: |
+          cat > "$RUNNER_TEMP/empty.sarif" <<'EOF'
+          {
+            "version": "2.1.0",
+            "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+            "runs": [{
+              "tool": {"driver": {"name": "Trivy", "informationUri": "https://github.com/aquasecurity/trivy", "version": "0.76.2", "rules": []}},
+              "results": []
+            }]
+          }
+          EOF
+
+      - uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          sarif_file: ${{ runner.temp }}/empty.sarif
+          category: trivy/spike/x
+
+      - name: Alerts after empty run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?ref=${GITHUB_REF}&state=open" \
+            --jq '.[] | {number, state, rule: .rule.id}' || true
+          gh api "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?ref=${GITHUB_REF}" \
+            --jq '.[] | {number, state, rule: .rule.id, fixed_at}' || true
+
+  h2-upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Write artifact
+        run: echo "spike h2 run ${GITHUB_RUN_ID}" > "$RUNNER_TEMP/h2.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: spike-h2-artifact
+          path: ${{ runner.temp }}/h2.txt
+          retention-days: 1
+
+  h2:
+    needs: h2-upload
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Status of REST calls with a contents-read token
+        run: |
+          api() {
+            code=$(curl -sS -o "$RUNNER_TEMP/out.json" -w '%{http_code}' \
+              -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/$1")
+            echo "GET $1 -> HTTP $code"
+            jq -c "$2" "$RUNNER_TEMP/out.json" 2>/dev/null || head -c 300 "$RUNNER_TEMP/out.json"; echo
+          }
+          api "repos/${GH_REPO}/actions/runs?event=schedule&per_page=5" '{total_count, runs: [.workflow_runs[]? | {id, name, event}]}'
+          api "repos/${GH_REPO}/actions/runs?per_page=5" '{total_count, runs: [.workflow_runs[]? | {id, name, event, status}]}'
+          api "repos/${GH_REPO}/actions/runs?branch=main&status=completed&per_page=3" '{total_count, runs: [.workflow_runs[]? | {id, name, event}]}'
+          api "repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}/artifacts" '{total_count, artifacts: [.artifacts[]? | {id, name}]}'
+          api "repos/${GH_REPO}/actions/artifacts?name=spike-h2-artifact&per_page=10" '{total_count, artifacts: [.artifacts[]? | {id, run: .workflow_run.id, expired}]}'
+          # archive download: expect a 302 to blob storage
+          id=$(curl -sS -H "Authorization: Bearer ${GH_TOKEN}" "https://api.github.com/repos/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}/artifacts" | jq -r '.artifacts[0].id // empty')
+          if [ -n "$id" ]; then
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://api.github.com/repos/${GH_REPO}/actions/artifacts/${id}/zip")
+            echo "GET actions/artifacts/${id}/zip (no redirect follow) -> HTTP $code"
+          fi
+
+      - name: gh run download, this run (artifact from another job)
+        run: |
+          set +e
+          gh run download "${GITHUB_RUN_ID}" -n spike-h2-artifact -D "$RUNNER_TEMP/dl-this"
+          echo "exit: $?"
+          cat "$RUNNER_TEMP/dl-this/h2.txt" 2>/dev/null
+
+      - name: gh run download, an earlier run
+        run: |
+          set +e
+          other=$(gh api "repos/${GH_REPO}/actions/artifacts?name=spike-h2-artifact&per_page=20" \
+            --jq "[.artifacts[] | select(.workflow_run.id != ${GITHUB_RUN_ID} and (.expired | not))][0].workflow_run.id // empty")
+          if [ -z "$other" ]; then echo "no earlier run with spike-h2-artifact yet"; exit 0; fi
+          echo "earlier run: $other"
+          gh run download "$other" -n spike-h2-artifact -D "$RUNNER_TEMP/dl-other"
+          echo "exit: $?"
+          cat "$RUNNER_TEMP/dl-other/h2.txt" 2>/dev/null
