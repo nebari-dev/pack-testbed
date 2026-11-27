@@ -16,10 +16,12 @@ on:
 jobs:
   scan:
     # feature-branch ref while testing; moves to v2 (spec Deviations)
-    uses: nebari-dev/.github/.github/workflows/pack-scan-images.yaml@feat/pack-scan-images
+    uses: nebari-dev/.github/.github/workflows/pack-scan-images.yaml@feat/scan-baseline
     permissions:
       contents: read
       security-events: write
     with:
       chart-path: chart
       values-files: chart/values.yaml
+      # Scheduled runs also scan the newest pack-testbed-* release.
+      chart-name: pack-testbed
